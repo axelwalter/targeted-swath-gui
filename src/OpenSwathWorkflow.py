@@ -1,7 +1,9 @@
+import streamlit as st
 import argparse
 import subprocess
 import shutil
 from pathlib import Path
+import pandas as pd
 
 # Initialize parser
 parser = argparse.ArgumentParser()
@@ -9,16 +11,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "-input",
     help="Input mzML files.",
-    default=[
-        "/home/a/data/1_4_Spectra_perSec_mzML/20230307_AA_01.mzML",
-        "/home/a/data/1_4_Spectra_perSec_mzML/20230307_AA_02.mzML",
-    ],
+    default=[],
 )
 
 parser.add_argument(
     "-input_directory",
     help="Process all mzML files in this directory.",
-    default="/home/a/data/5spectra_persec_mzML",
+    default="",
 )
 
 parser.add_argument(
@@ -30,19 +29,19 @@ parser.add_argument(
 parser.add_argument(
     "-library",
     help="Transition library.",
-    default="library.tsv",
+    default="",
 )
 
 parser.add_argument(
     "-swath_windows_file",
     help="Swath windows in tsv format (columns: start mz, stop mz).",
-    default="SWATH-windows.tsv",
+    default="",
 )
 
 parser.add_argument(
     "-rt_extraction_window",
     help="Only extract RT around this value (-1 means extract over the whole range, a value of 600 means to extract around +/- 300 s of the expected elution).",
-    default="600.0",
+    default="10.0",
 )
 
 # Read arguments from command line
@@ -62,13 +61,14 @@ if out.is_dir():
 out.mkdir()
 
 for file in mzML_files:
+    out = str(Path(args.output_directory, Path(file).stem + ".tsv"))
     # Set up command for OpenSwathWorkflow
     command = [
         "OpenSwathWorkflow",
         "-in",
         file,
         "-out_tsv",
-        str(Path(args.output_directory, Path(file).stem + ".tsv")),
+        out,
         "-tr",
         args.library,
         "-swath_windows_file",
@@ -83,6 +83,12 @@ for file in mzML_files:
     result = subprocess.run(command, capture_output=True, text=True)
 
     print(result.stdout)
+
+    df = pd.read_csv(out, sep="\t")
+    if df.empty:
+        st.warning(f"Empty output for {file} generated!")
+        Path(out).unlink()
+
 
 # RT:
 # rt_extraction_window: Only extract RT around this value (-1 means extract over the whole range, a value of 600 means to extract around +/- 300 s of the expected elution). (default: '600.0')
