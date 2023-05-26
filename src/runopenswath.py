@@ -4,7 +4,6 @@ from pathlib import Path
 import shutil
 
 
-@st.cache_resource
 def run_openswath(mzML_files, rt_window, library, windows, out_dir):
     if Path(out_dir).exists():
         shutil.rmtree(out_dir)

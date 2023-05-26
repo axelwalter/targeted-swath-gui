@@ -6,11 +6,13 @@ from src.eic import *
 from src.ms2 import *
 from src.librarygeneration import *
 
-st.session_state.mzML_options = [p.name for p in Path("mzML-files").glob("*.mzML")]
+st.session_state.mzML_options = [
+    p.name for p in Path("mzML-files").glob("*.mzML")]
 st.session_state.library_options = [
     p.name for p in Path("assay-libraries").glob("*.tsv")
 ]
-st.session_state.window_options = [p.name for p in Path("SWATH-windows").glob("*.tsv")]
+st.session_state.window_options = [
+    p.name for p in Path("SWATH-windows").glob("*.tsv")]
 st.session_state.mass_list_options = [
     p.name for p in Path("precursor-lists").glob("*.tsv")
 ]
@@ -55,7 +57,8 @@ with t1:
     _, c1, _ = st.columns(3)
     if c1.button(label="Run OpenSWATH Workflow"):
         run_openswath(
-            [str(Path("mzML-files", f)) for f in st.session_state.openswath_mzML],
+            [str(Path("mzML-files", f))
+             for f in st.session_state.openswath_mzML],
             str(st.session_state.openswath_rt_window),
             str(Path("assay-libraries", st.session_state.openswath_library)),
             str(Path("SWATH-windows", st.session_state.openswath_windows)),
@@ -64,7 +67,8 @@ with t1:
 
 with t2:
     if any(Path("results").glob("*.tsv")):
-        st.text_input(label="custom plot title", value="", key="openswath_plot_title")
+        st.text_input(label="custom plot title", value="",
+                      key="openswath_plot_title")
         st.markdown("#")
         title = f"library: {st.session_state.openswath_library} RT window: {st.session_state.openswath_rt_window}"
         if st.session_state.openswath_plot_title:
@@ -143,7 +147,8 @@ with t4:
         options=st.session_state.mzML_options,
         key="ms2_file",
     )
-    df = get_ms2_df(str(Path("mzML-files", st.session_state.ms2_file)))
+    if st.session_state.ms2_file:
+        df = get_ms2_df(str(Path("mzML-files", st.session_state.ms2_file)))
     if not df.empty:
         st.selectbox(
             "select MS2 spectrum",
@@ -193,10 +198,11 @@ with t5:
     )
     _, c, _ = st.columns(3)
     if c.button("Generate Library"):
-        generate_library(
-            str(Path("mzML-files", st.session_state.generate_file)),
-            str(Path("precursor-lists", st.session_state.generate_mass_list)),
-            st.session_state.generate_top_n,
-            st.session_state.generate_ppm,
-        )
+        with st.spinner("Generating library..."):
+            generate_library(
+                str(Path("mzML-files", st.session_state.generate_file)),
+                str(Path("precursor-lists", st.session_state.generate_mass_list)),
+                st.session_state.generate_top_n,
+                st.session_state.generate_ppm,
+            )
         st.experimental_rerun()

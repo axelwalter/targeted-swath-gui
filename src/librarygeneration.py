@@ -41,14 +41,14 @@ def get_RT(ms1, prec_mz, ppm_error):
     mass_error = (ppm_error / 1000000) * prec_mz
     # filter ms1 peaks for mz values within the error range and sort values by intensity in descending order
     df = ms1[
-        (ms1["mz"] > (prec_mz - mass_error)) & (ms1["mz"] < (prec_mz + mass_error))
+        (ms1["mz"] > (prec_mz - mass_error)
+         ) & (ms1["mz"] < (prec_mz + mass_error))
     ].sort_values("i", ascending=False)
     # calculate the RT from the mean of the top peaks in seconds
     rt = round(df["rt"].iloc[:10].mean() * 60)
     return rt
 
 
-@st.cache_resource
 def generate_library(mzML_file, mass_list_file, top_n, ppm_error):
     # load MSExperiment
     exp = MSExperiment()
@@ -73,13 +73,15 @@ def generate_library(mzML_file, mass_list_file, top_n, ppm_error):
     collision_energy = []
 
     for query in queries:
-        transitions = get_transitions(mzML_file, ms1, ms2, query[1], top_n, ppm_error)
+        transitions = get_transitions(
+            mzML_file, ms1, ms2, query[1], top_n, ppm_error)
         for t in transitions:
             compound_name.append(query[0])
             precursor_mz.append(query[1])
             product_mz.append(t[0])
             library_intensity.append(t[1])
-            normalized_retention_time.append(get_RT(ms1, query[1], ppm_error))
+            normalized_retention_time.append(
+                get_RT(ms1, query[1], ppm_error))
             transition_group_id.append(query[0])
             collision_energy.append(10)
 
@@ -103,8 +105,8 @@ def generate_library(mzML_file, mass_list_file, top_n, ppm_error):
             path,
             sep="\t",
         )
-        st.success(f"Done! {str(path)}")
+        print(f"Done! {str(path)}")
     else:
-        st.warning(
+        print(
             "Generated library was empty, please check your inputs. DDA data file required."
         )

@@ -5,7 +5,6 @@ from pyopenms import *
 import numpy as np
 
 
-@st.cache_data
 def get_ms2_df(file):
     exp = MSExperiment()
     MzMLFile().load(file, exp)
@@ -25,7 +24,6 @@ def get_ms2_df(file):
     return df
 
 
-@st.cache_resource
 def get_ms2_spec_plot(df, spec):
     def create_spectra(x, y, zero=0):
         x = np.repeat(x, 3)
