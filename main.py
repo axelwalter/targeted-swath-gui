@@ -5,7 +5,9 @@ from src.openswathresults import *
 from src.eic import *
 from src.ms2 import *
 from src.librarygeneration import *
+from src.common import *
 
+st.set_page_config(layout="wide")
 st.session_state.mzML_options = [
     p.name for p in Path("mzML-files").glob("*.mzML")]
 st.session_state.library_options = [
@@ -55,7 +57,7 @@ with t1:
         key="openswath_windows",
     )
     _, c1, _ = st.columns(3)
-    if c1.button(label="Run OpenSWATH Workflow"):
+    if c1.button(label="Run OpenSWATH Workflow", type="primary"):
         run_openswath(
             [str(Path("mzML-files", f))
              for f in st.session_state.openswath_mzML],
@@ -67,78 +69,57 @@ with t1:
 
 with t2:
     if any(Path("results").glob("*.tsv")):
-        st.text_input(label="custom plot title", value="",
-                      key="openswath_plot_title")
-        st.markdown("#")
-        title = f"library: {st.session_state.openswath_library} RT window: {st.session_state.openswath_rt_window}"
-        if st.session_state.openswath_plot_title:
-            title = st.session_state.openswath_plot_title
-        fig = plot_openswath_results(
-            [str(f) for f in Path("results").glob("*.tsv")], title
-        )
-        st.plotly_chart(
-            fig,
-            config={
-                "displaylogo": False,
-                "modeBarButtonsToRemove": [
-                    "zoom",
-                    "pan",
-                    "select",
-                    "lasso",
-                    "zoomin",
-                    "autoscale",
-                    "zoomout",
-                    "resetscale",
-                ],
-                "toImageButtonOptions": {"filename": title.replace(" ", "_")},
-            },
-        )
+        c1, c2 = st.columns(2)
+        title = c1.text_input(label="custom plot title", value="")
+
+        c1, c2 = st.columns(2)
+        df = pd.DataFrame({"filename": [f.name for f in Path("results").glob("*.tsv")]})
+        df["time changed"] = [Path("results", f).stat().st_mtime for f in df["filename"]]
+        df = df.sort_values("time changed", ascending=False)
+        file1 = c1.selectbox("select result file", df["filename"])
+        remaining = df["filename"].tolist()
+        remaining.remove(file1)
+        remaining.insert(0, "none")
+        file2 = c2.selectbox("select result file for visual comparison", remaining)
+        files = [str(Path("results", file1))]
+        if file2 != "none":
+            files.append(str(Path("results", file2)))
+
+        fig = plot_openswath_results(files, title)
+        show_fig(fig, "openswath-results")
+        st.markdown(file1)
+        df = pd.read_csv(Path("results", file1), sep="\t")
+        st.dataframe(df)
     else:
         st.warning("No results to show.")
 
 with t3:
-    st.selectbox(
-        label="mzML file",
-        options=st.session_state.mzML_options,
-        key="eic_file",
-    )
     c1, c2 = st.columns(2)
-    c1.number_input(
-        "m/z for extracted ion chromatogram", 50.0, 2000.0, 200.0, 1.0, key="eic_mz"
-    )
-    c2.number_input("tolerance (ppm)", 1.0, 50.0, 10.0, 1.0, key="eic_ppm")
+    file = c1.selectbox(label="mzML file", options=st.session_state.mzML_options)
+    library = c2.selectbox("assay library", options=st.session_state.library_options)
+    c1, c2, c3 = st.columns(3)
+    eic_noise = c1.number_input("noise threshhold", 0, 10000, 1000, 1000)
+    eic_ppm = c2.number_input("tolerance (ppm)", 1, 50, 10, 1)
+    eic_rt_window = c3.number_input("RT window", 1, 60, 5)
 
-    df = pd.DataFrame()
+    if "eic_df" not in st.session_state:
+        st.session_state.eic_df = pd.DataFrame()
+    
+    _, c2, _ = st.columns(3)
+    if c2.button("Extract Ion Chromatograms", type="primary"):
+        st.session_state.eic_df = get_extracted_ion_chromatogram(str(Path("mzML-files", file)),
+                                            str(Path("assay-libraries", library)),
+                                            eic_noise,
+                                            eic_rt_window,
+                                            eic_ppm)
 
-    _, c1, _ = st.columns(3)
-    if c1.button("Extract Ion Chromatogram") and st.session_state.eic_file:
-        df = get_extracted_ion_chromatogram(
-            str(Path("mzML-files", st.session_state.eic_file)),
-            st.session_state.eic_mz,
-            st.session_state.eic_ppm,
-        )
-
-    if not df.empty:
-        fig = get_eic_plot(df)
-        st.plotly_chart(
-            fig,
-            config={
-                "displaylogo": False,
-                "modeBarButtonsToRemove": [
-                    "zoom",
-                    "pan",
-                    "select",
-                    "lasso",
-                    "zoomin",
-                    "autoscale",
-                    "zoomout",
-                    "resetscale",
-                ],
-                "toImageButtonOptions": {
-                    "filename": f"{Path(st.session_state.eic_file).stem.replace(' ', '_')}_{st.session_state.eic_mz}"
-                },
-            },
-        )
+    if not st.session_state.eic_df.empty:
+        fig = px.bar(st.session_state.eic_df["area"])
+        show_fig(fig, "eic-area-plot")
+        metabolite = st.selectbox("metabolite", st.session_state.eic_df["area"].sort_values(ascending=False).index)
+        fig = px.line(x=st.session_state.eic_df.loc[metabolite, "times"], y=st.session_state.eic_df.loc[metabolite, "intensities"])
+        show_fig(fig, metabolite)
+        show_table(st.session_state.eic_df[["mz", "RT", "area"]])
 
 with t4:
     df = pd.DataFrame()
@@ -159,23 +140,7 @@ with t4:
             key="ms2_spec",
         )
         fig = get_ms2_spec_plot(df, st.session_state.ms2_spec)
-        st.plotly_chart(
-            fig,
-            config={
-                "displaylogo": False,
-                "modeBarButtonsToRemove": [
-                    "zoom",
-                    "pan",
-                    "select",
-                    "lasso",
-                    "zoomin",
-                    "autoscale",
-                    "zoomout",
-                    "resetscale",
-                ],
-                "toImageButtonOptions": {"filename": st.session_state.ms2_spec},
-            },
-        )
+        show_fig(fig, st.session_state.ms2_spec)
 
     else:
         st.warning("No MS2 spectra in data!")
