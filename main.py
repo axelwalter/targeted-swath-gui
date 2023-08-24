@@ -100,7 +100,7 @@ with t3:
     c1, c2, c3 = st.columns(3)
     eic_noise = c1.number_input("noise threshhold", 0, 10000, 1000, 1000)
     eic_ppm = c2.number_input("tolerance (ppm)", 1, 50, 10, 1)
-    eic_rt_window = c3.number_input("RT window", 1, 60, 5)
+    eic_rt_window = c3.number_input("RT window", 1, 150, 5)
 
     if "eic_df" not in st.session_state:
         st.session_state.eic_df = pd.DataFrame()
