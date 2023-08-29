@@ -89,7 +89,7 @@ with t2:
         show_fig(fig, "openswath-results")
         st.markdown(file1)
         df = pd.read_csv(Path("results", file1), sep="\t")
-        st.dataframe(df)
+        show_table(df, "openswath-results")
     else:
         st.warning("No results to show.")
 
@@ -119,31 +119,31 @@ with t3:
         metabolite = st.selectbox("metabolite", st.session_state.eic_df["area"].sort_values(ascending=False).index)
         fig = px.line(x=st.session_state.eic_df.loc[metabolite, "times"], y=st.session_state.eic_df.loc[metabolite, "intensities"])
         show_fig(fig, metabolite)
-        show_table(st.session_state.eic_df[["mz", "RT", "area"]])
+        show_table(st.session_state.eic_df[["mz", "RT", "area"]], "eic-areas")
 
-# with t4:
-#     df = pd.DataFrame()
-#     st.selectbox(
-#         label="mzML file",
-#         options=st.session_state.mzML_options,
-#         key="ms2_file",
-#     )
-#     if st.session_state.ms2_file:
-#         df = get_ms2_df(str(Path("mzML-files", st.session_state.ms2_file)))
-#     if not df.empty:
-#         st.selectbox(
-#             "select MS2 spectrum",
-#             options=[
-#                 f"{i} @{round(mz, 4)} m/z @{round(rt,2)} s"
-#                 for i, mz, rt in zip(df.index, df["precursormz"], df["RT"])
-#             ],
-#             key="ms2_spec",
-#         )
-#         fig = get_ms2_spec_plot(df, st.session_state.ms2_spec)
-#         show_fig(fig, st.session_state.ms2_spec)
+with t4:
+    df = pd.DataFrame()
+    st.selectbox(
+        label="mzML file",
+        options=st.session_state.mzML_options,
+        key="ms2_file",
+    )
+    if st.session_state.ms2_file:
+        df = get_ms2_df(str(Path("mzML-files", st.session_state.ms2_file)))
+    if not df.empty:
+        st.selectbox(
+            "select MS2 spectrum",
+            options=[
+                f"{i} @{round(mz, 4)} m/z @{round(rt,2)} s"
+                for i, mz, rt in zip(df.index, df["precursormz"], df["RT"])
+            ],
+            key="ms2_spec",
+        )
+        fig = get_ms2_spec_plot(df, st.session_state.ms2_spec)
+        show_fig(fig, st.session_state.ms2_spec)
 
-#     else:
-#         st.warning("No MS2 spectra in data!")
+    else:
+        st.warning("No MS2 spectra in data!")
 
 with t5:
     mzML_file = st.selectbox(
