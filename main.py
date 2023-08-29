@@ -121,53 +121,60 @@ with t3:
         show_fig(fig, metabolite)
         show_table(st.session_state.eic_df[["mz", "RT", "area"]])
 
-with t4:
-    df = pd.DataFrame()
-    st.selectbox(
-        label="mzML file",
-        options=st.session_state.mzML_options,
-        key="ms2_file",
-    )
-    if st.session_state.ms2_file:
-        df = get_ms2_df(str(Path("mzML-files", st.session_state.ms2_file)))
-    if not df.empty:
-        st.selectbox(
-            "select MS2 spectrum",
-            options=[
-                f"{i} @{round(mz, 4)} m/z @{round(rt,2)} s"
-                for i, mz, rt in zip(df.index, df["precursormz"], df["RT"])
-            ],
-            key="ms2_spec",
-        )
-        fig = get_ms2_spec_plot(df, st.session_state.ms2_spec)
-        show_fig(fig, st.session_state.ms2_spec)
+# with t4:
+#     df = pd.DataFrame()
+#     st.selectbox(
+#         label="mzML file",
+#         options=st.session_state.mzML_options,
+#         key="ms2_file",
+#     )
+#     if st.session_state.ms2_file:
+#         df = get_ms2_df(str(Path("mzML-files", st.session_state.ms2_file)))
+#     if not df.empty:
+#         st.selectbox(
+#             "select MS2 spectrum",
+#             options=[
+#                 f"{i} @{round(mz, 4)} m/z @{round(rt,2)} s"
+#                 for i, mz, rt in zip(df.index, df["precursormz"], df["RT"])
+#             ],
+#             key="ms2_spec",
+#         )
+#         fig = get_ms2_spec_plot(df, st.session_state.ms2_spec)
+#         show_fig(fig, st.session_state.ms2_spec)
 
-    else:
-        st.warning("No MS2 spectra in data!")
+#     else:
+#         st.warning("No MS2 spectra in data!")
 
 with t5:
-    st.selectbox(
+    mzML_file = st.selectbox(
         label="mzML file with DDA data for library generation",
-        options=st.session_state.mzML_options,
-        key="generate_file",
+        options=st.session_state.mzML_options
     )
-    st.selectbox(
-        "mass list file",
-        options=st.session_state.mass_list_options,
-        key="generate_mass_list",
+    precursor_file = st.selectbox(
+        "precursor mass list file",
+        options=st.session_state.mass_list_options
     )
     c1, c2 = st.columns(2)
-    c1.number_input("mass error in ppm", 1, 50, 10, key="generate_ppm")
-    c2.number_input(
-        "take top n MS2 peaks as transitions", 1, 10, 4, key="generate_top_n"
-    )
+    tolerance_ppm = c1.number_input("mass error in ppm", 1, 50, 10)
+    top_n = c2.number_input("take top n MS2 peaks as transitions", 1, 10, 4)
+    collision_energy = c1.number_input("collision energy", 10, 50, 10, 5)
+    v_space(1, c2)
+    exclude_precursor_mass = c2.checkbox("exclude precursor mass", True)
     _, c, _ = st.columns(3)
-    if c.button("Generate Library"):
-        with st.spinner("Generating library..."):
-            generate_library(
-                str(Path("mzML-files", st.session_state.generate_file)),
-                str(Path("precursor-lists", st.session_state.generate_mass_list)),
-                st.session_state.generate_top_n,
-                st.session_state.generate_ppm,
-            )
-        st.experimental_rerun()
+    df = pd.DataFrame()
+    if c.button("Generate Library", type="primary"):
+        st.session_state.genlib_filename = f"{mzML_file[:-5]}_{precursor_file[:-4]}_top{top_n}_{exclude_precursor_mass}_ppm{tolerance_ppm}_ce{collision_energy}"
+        df = pd.read_csv(str(Path("precursor-lists", precursor_file)), sep="\t", names=["name", "mz", "sum formula"])
+        df = generate_library(
+                str(Path("precursor-lists", precursor_file)),
+                str(Path("mzML-files", mzML_file)),
+                top_n,
+                exclude_precursor_mass,
+                tolerance_ppm,
+                collision_energy
+        )
+        df.to_csv(Path("assay-libraries", st.session_state.genlib_filename+".tsv"), sep="\t")
+    if "genlib_filename" in st.session_state:
+        df = pd.read_csv(Path("assay-libraries", st.session_state.genlib_filename+".tsv"), sep="\t")
+        if not df.empty:
+            show_table(df, st.session_state.genlib_filename)

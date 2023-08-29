@@ -1,7 +1,3 @@
 streamlit
-pandas
-numpy
+pyopenms
 plotly
-massql
---index-url https://pypi.cs.uni-tuebingen.de/simple/
-pyopenms-nightly

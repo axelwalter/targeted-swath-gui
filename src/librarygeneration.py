@@ -1,112 +1,92 @@
 import streamlit as st
 from pyopenms import *
-from massql import msql_engine
 import pandas as pd
-from pathlib import Path
+import numpy as np
 
+@st.cache_data
+def generate_library(precursor_file, mzML_file, top_n, exclude_precursor_mass, tolerance_ppm, collision_energy):
+    """
+    Generate a library of transitions for metabolites.
 
-def get_transitions(mzML_file, ms1, ms2, prec_mz, top_n, ppm_error):
-    # get all MS2 spectra with precursor mass
-    df = msql_engine.process_query(
-        f"QUERY scaninfo(MS2DATA) WHERE MS2PREC={prec_mz}:TOLERANCEPPM={ppm_error}",
-        mzML_file,
-        ms1_df=ms1,
-        ms2_df=ms2,
-    )
-    if df.empty:
-        return []
-    # get scan number of MS2 spectrum with highest TIC intensity (best quality spectrum)
-    scan = df.loc[df["i"].idxmax(), "scan"]
-    # now query that spectrum for the highest intensity peak
-    df = ms2[ms2["scan"] == scan].sort_values("i_norm", ascending=False)
-    # get the two highest intensity peaks with a buffer of 2 Da (to not peak peaks very close together)
-    # only peaks equal or smaller precursor mass are considered
-    df = df[df["mz"] < (prec_mz + 1)]
-    intensities = []
-    product_mzs = []
-    # iteratively pick the top_n peaks and exclude them with the buffer
-    for _ in range(top_n):
-        i = df["i"].idxmax()
-        mz = df.loc[i, "mz"]
-        product_mzs.append(mz)
-        intensities.append(df.loc[i, "i"])
-        df = df[~((df["mz"] >= mz - 2) & (df["mz"] <= mz + 2))]
-    # normalize intensities
-    intensities = [x / max(intensities) for x in intensities]
-    return list(zip(product_mzs, intensities))
+    Args:
+        precursor_file (str): Path to the precursor file (CSV format).
+        mzML_file (str): Path to the mzML file.
+        top_n (int): Number of top intensity transitions to select.
+        exclude_precursor_mass (bool): Whether to exclude precursor masses from transitions.
+        tolerance_ppm (float): Mass tolerance in parts per million.
+        collision_energy (int): Collision energy value.
 
+    Returns:
+        pd.DataFrame: DataFrame containing transition information.
+    """
+    # Load precursor information from CSV file
+    df = pd.read_csv(precursor_file, sep="\t", names=["name", "mz", "sum formula"])
 
-def get_RT(ms1, prec_mz, ppm_error):
-    # calculate mass error at given ppm value
-    mass_error = (ppm_error / 1000000) * prec_mz
-    # filter ms1 peaks for mz values within the error range and sort values by intensity in descending order
-    df = ms1[
-        (ms1["mz"] > (prec_mz - mass_error)
-         ) & (ms1["mz"] < (prec_mz + mass_error))
-    ].sort_values("i", ascending=False)
-    # calculate the RT from the mean of the top peaks in seconds
-    rt = round(df["rt"].iloc[:10].mean() * 60)
-    return rt
-
-
-def generate_library(mzML_file, mass_list_file, top_n, ppm_error):
-    # load MSExperiment
+    # Load mzML file into exp
     exp = MSExperiment()
     MzMLFile().load(mzML_file, exp)
 
-    # get MS1 and MS2 dataframes
-    ms1, ms2 = exp.get_massql_df()
+    def get_transitions(metabolite):
+        """
+        Generate transitions for a metabolite.
 
-    with open(mass_list_file, "r") as f:
-        queries = []
-        for line in f.readlines():
-            l = line.strip().split("\t")
-            name, mz = l[0], float(l[1])
-            queries.append((name, mz))
+        Args:
+            metabolite (pd.Series): Metabolite information.
 
-    compound_name = []
-    precursor_mz = []
-    product_mz = []
-    library_intensity = []
-    normalized_retention_time = []
-    transition_group_id = []
-    collision_energy = []
+        Returns:
+            pd.Series: Transition information.
+        """
+        tic = 0
+        mzs = np.array([])
+        intys = np.array([])
+        delta = (tolerance_ppm / 1000000) * metabolite["mz"]
+        print(f"{metabolite['name']} mz: {metabolite['mz']}...")
+        ms1_rt = 0
+        ms1_rt_tmp = 0  # in case the first spec is MS2
+        for spec in exp:
+            if spec.getMSLevel() == 1:
+                ms1_rt_tmp = spec.getRT()
+            if spec.getMSLevel() == 2:
+                prec = spec.getPrecursors()[0].getMZ()
+                if metabolite["mz"] - delta < prec < metabolite["mz"] + delta:
+                    mzs_tmp, intys_tmp = spec.get_peaks()
+                    if intys_tmp.sum() > tic:
+                        tic = intys_tmp.sum()
+                        mzs = mzs_tmp
+                        intys = intys_tmp
+                        ms1_rt = ms1_rt_tmp
+        if mzs.any():
+            # Normalize intensity values
+            intys = intys / intys.max()
+            # Exclude masses, depends on keeping unfractionated precursor mass
+            if exclude_precursor_mass:
+                condition = mzs < metabolite["mz"] - 1
+            else:
+                condition = mzs < metabolite["mz"] + delta
+            filtered_indices = np.where(condition)[0]
+            mzs = mzs[filtered_indices]
+            intys = intys[filtered_indices]
+            # Get indices of top_n highest intensity peaks
+            sorted_indeces = np.argsort(intys)[-top_n:]
+            mzs = mzs[sorted_indeces]
+            intys = intys[sorted_indeces]
 
-    for query in queries:
-        transitions = get_transitions(
-            mzML_file, ms1, ms2, query[1], top_n, ppm_error)
-        for t in transitions:
-            compound_name.append(query[0])
-            precursor_mz.append(query[1])
-            product_mz.append(t[0])
-            library_intensity.append(t[1])
-            normalized_retention_time.append(
-                get_RT(ms1, query[1], ppm_error))
-            transition_group_id.append(query[0])
-            collision_energy.append(10)
+        return pd.Series({"transition mzs": mzs, "transition intys": intys, "transition ms1 rt": ms1_rt})
 
-    df = pd.DataFrame(
-        {
-            "CompoundName": compound_name,
-            "PrecursorMz": precursor_mz,
-            "ProductMz": product_mz,
-            "LibraryIntensity": library_intensity,
-            "NormalizedRetentionTime": normalized_retention_time,
-            "TransitionGroupId": transition_group_id,
-            "CollisionEnergy": collision_energy,
-        }
-    )
-    path = Path(
-        "assay-libraries",
-        f"{Path(mzML_file).stem}_{Path(mass_list_file).stem}_top{top_n}.tsv",
-    )
-    if not df.empty:
-        df.to_csv(
-            path,
-            sep="\t",
-        )
-        print(f"Done! {str(path)}")
-    else:
-        print(
-            "Generated library was empty, please check your inputs. DDA data file required."
-        )
+    # Apply the get_transitions function to each row
+    df[["transition mzs", "transition intys", "transition ms1 rt"]] = df.apply(get_transitions, axis=1)
+
+    # Build transition table
+    def build_transition_table(df):
+        for _, row in df.iterrows():
+            for mz, inty in zip(row["transition mzs"], row["transition intys"]):
+                yield row["name"], row["mz"], mz, inty, row["transition ms1 rt"], row["name"], collision_energy
+
+    # Create a DataFrame from the built transition table
+    df = pd.DataFrame(np.fromiter(build_transition_table(df), dtype=[("CompoundName", "U100"), ("PrecursorMz", "f"),
+                                                                     ("ProductMz", "f"), ("LibraryIntensity", "f"),
+                                                                     ("NormalizedRetentionTime", "f"),
+                                                                     ("TransitionGroupId", "U100"),
+                                                                     ("CollisionEnergy", "i")]))
+    
+    return df
