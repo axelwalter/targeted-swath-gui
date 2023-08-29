@@ -115,9 +115,11 @@ with t3:
 
     if not st.session_state.eic_df.empty:
         fig = px.bar(st.session_state.eic_df["area"])
+        fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="intensity")
         show_fig(fig, "eic-area-plot")
         metabolite = st.selectbox("metabolite", st.session_state.eic_df["area"].sort_values(ascending=False).index)
         fig = px.line(x=st.session_state.eic_df.loc[metabolite, "times"], y=st.session_state.eic_df.loc[metabolite, "intensities"])
+        fig.update_layout(showlegend=False, xaxis_title="retention time (s)", yaxis_title="counts per second (cps)", title=metabolite)
         show_fig(fig, metabolite)
         show_table(st.session_state.eic_df[["mz", "RT", "area"]], "eic-areas")
 
