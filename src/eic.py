@@ -4,10 +4,11 @@ import numpy as np
 from pyopenms import *
 
 @st.cache_data
-def get_extracted_ion_chromatogram(file, library, noise, rt_window, tolerance_ppm):
+def get_extracted_ion_chromatogram(file, library, noise, rt_window, tolerance_ppm, openswath_metabolites=[]):
     # load compound names, mz and RT values from library
     lib = pd.read_csv(library, sep="\t").groupby("CompoundName").mean("PrecursorMz")[["PrecursorMz", "NormalizedRetentionTime"]]
-    
+    if openswath_metabolites:
+        lib = lib[lib.index.isin(openswath_metabolites)]
     # load mzML file into exp
     exp = MSExperiment()
     MzMLFile().load(str(file), exp)
@@ -44,7 +45,6 @@ def get_extracted_ion_chromatogram(file, library, noise, rt_window, tolerance_pp
 
     lib = lib.rename(columns={"NormalizedRetentionTime": "RT", "PrecursorMz": "mz"})
     lib.index.name = "name"
-
 
     return lib.sort_values("area")
 

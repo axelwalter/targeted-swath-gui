@@ -7,7 +7,7 @@ import pandas as pd
 def run_openswath(mzML_files, rt_window, library, windows, out_dir):
     Path(out_dir).mkdir(exist_ok=True)
     for file in mzML_files:
-        out_file = Path(out_dir, f"{Path(file).stem}_{Path(library).stem}_{rt_window}s_nones.tsv")
+        out_file = Path(out_dir, f"{Path(file).stem}_{Path(library).stem}_{rt_window}s.tsv")
         # Set up command for OpenSwathWorkflow
         command = [
             "OpenSwathWorkflow",

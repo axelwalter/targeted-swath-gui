@@ -76,6 +76,9 @@ for file in mzML_files:
         "-force",
         "-rt_extraction_window",
         args.rt_extraction_window,
+        # "--use_ms1_traces"
+        "-out_chrom",
+        "results/chrom.mzML"
     ]
 
     print("Running command:", subprocess.list2cmdline(command))

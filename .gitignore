@@ -2,3 +2,4 @@ results
 mzML-files/*
 assay-libraries/*
 precursor-lists/*
+validator-results

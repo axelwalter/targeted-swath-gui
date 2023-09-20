@@ -16,7 +16,7 @@ def plot_openswath_results(files, title):
         df = pd.read_csv(file, sep="\t").loc[:, ["transition_group_id", "Intensity"]]
         if df.empty:
             continue
-        df["name"] = df.loc[:, "transition_group_id"].apply(lambda x: x.split("_")[0])
+        df["name"] = df.loc[:, "transition_group_id"].apply(lambda x: "_".join(x.split("_")[:-1]))
         df = df.drop(columns=["transition_group_id"])
         df = df.groupby("name").mean().sort_values(by="Intensity")
         df = df.rename(columns={"Intensity": Path(file).stem})
