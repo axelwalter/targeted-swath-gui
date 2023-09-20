@@ -15,7 +15,7 @@ mzML_files = st.multiselect("mzML files", [p.stem for p in Path("mzML-files").gl
 assay_library = str(st.selectbox("assay library", Path("assay-libraries").glob("*.tsv"), 4))
 swath_window = str(st.selectbox("swath windows", Path("SWATH-windows").glob("*.tsv"), 2))
 create_eics = st.checkbox("additionally quantify with extracted ion chromatogram area", True)
-additional = st.text_input("additional commands", "-rt_extraction_window 10")
+additional = st.text_input("additional commands", "-rt_extraction_window 10 -Scoring:TransitionGroupPicker:min_peak_width 2 -Scoring:TransitionGroupPicker:use_precursors -mz_extraction_window_ms1 10 -mz_extraction_window 10")
 
 
 _, c2, _ = st.columns(3)
@@ -37,7 +37,12 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
             st.write(" ".join(command))
             subprocess.run(command)
 
-            df = pd.read_csv(Path(out_dir, Path(mzML_file).stem+".tsv"), sep="\t")
+            result_file_path = Path(out_dir, Path(mzML_file).stem+".tsv")
+            if not result_file_path.exists():
+                st.warning(f"Results empty for {mzML_file}")
+                continue
+
+            df = pd.read_csv(result_file_path, sep="\t")
             df["CompoundName"] = df.loc[:, "transition_group_id"].apply(lambda x: "_".join(x.split("_")[:-1]))
             df = df.drop(columns=["transition_group_id"])
             df = df.groupby("CompoundName")[["Intensity"]].mean().sort_values(by="Intensity")
@@ -51,8 +56,6 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
                     eic_intys.index.name = "CompoundName"
                     dfs.append(eic_intys)
                     st.write("✅ Done exracting chromatograms.")
-            else:
-                st.warning(f"Results empty for {mzML_file}")
 
         if dfs:
             df = pd.concat(dfs, axis=1)
@@ -64,12 +67,11 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
         else:
             status.update(label="No results with selected settings.", state="error")
 
+path = Path("validator-results", "summary.tsv")
+if path.exists():
+    df = pd.read_csv(path, sep="\t", index_col="CompoundName")
 else:
-    path = Path("validator-results", "summary.tsv")
-    if path.exists():
-        df = pd.read_csv(path, sep="\t", index_col="CompoundName")
-    else:
-        df = pd.DataFrame()
+    df = pd.DataFrame()
 
 if not df.empty:
     fig = px.bar(df, barmode="group")
@@ -89,10 +91,10 @@ if dfs:
     fig = go.Figure()
     for name, df in zip([f.stem[:-4] for f in Path("validator-results").glob("*.pkl")], filtered_dataframes):
         fig.add_trace(
-            go.Line(
-                name=name,
+            go.Scatter(
                 x=df["times"][0],
                 y=df["intensities"][0],
+                name=name,
             )
         )
     fig.update_layout(
