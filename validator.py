@@ -3,11 +3,13 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
 import subprocess
 import shutil
 from src.openswathresults import plot_openswath_results
 from src.eic import get_extracted_ion_chromatogram
 from src.common import show_fig, show_table
+import pyopenms as poms
 
 st.set_page_config(layout="wide")
 
@@ -24,7 +26,7 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
         out_dir = Path("validator-results")
         if out_dir.exists():
             shutil.rmtree(out_dir)
-            out_dir.mkdir()
+        out_dir.mkdir()
         
         dfs = []
         for mzML_file in mzML_files:
@@ -32,6 +34,8 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
             mzML_file = str(Path("mzML-files", mzML_file+".mzML"))
             command = ["OpenSwathWorkflow", "-in", mzML_file, "-tr", assay_library,
                         "-out_tsv", str(Path(out_dir, Path(mzML_file).stem+".tsv")),
+                        "-out_chrom", str(Path(out_dir, Path(mzML_file).stem+"_chrom.mzML")),
+                        "-ms1_isotopes", "0",
                         "-swath_windows_file", swath_window] + additional.split(" ") + ["-force"]
             st.write("Executing OpenSwathWorkflow command:")
             st.write(" ".join(command))
@@ -49,8 +53,24 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
             df = df.rename(columns={"Intensity": Path(mzML_file).stem})
             if not df.empty:
                 dfs.append(df)
+                names = []
+                rts = []
+                intys = []
+                exp = poms.MSExperiment()
+                poms.MzMLFile().load(str(Path("validator-results", Path(mzML_file).stem +  "_chrom.mzML")), exp)
+                for chrom in exp.getChromatograms():
+                    if chrom.getChromatogramType() == 3: # 3 == BASEPEAK_CHROMATOGRAM, 5 = SELECTED_REACTION_MONITORING_CHROMATOGRAM
+                        names.append(chrom.getPrecursor().getMetaValue("peptide_sequence")) 
+                        rt, inty = chrom.get_peaks()
+                        rts.append(rt)
+                        intys.append(inty)
+                chroms = pd.DataFrame({"name": names, "times": rts, "intensities": intys})
+                chroms = chroms.set_index("name")
+                chroms = chroms[chroms.index.isin(df.index)]
+                chroms.to_pickle(Path("validator-results", f"{Path(mzML_file).stem}_chrom.pkl"))
+                
                 if create_eics:
-                    eic = get_extracted_ion_chromatogram(mzML_file, assay_library, 1000, 10, 10, df.index.tolist())
+                    eic = get_extracted_ion_chromatogram(mzML_file, assay_library, 100, 10, 10, df.index.tolist())
                     eic.to_pickle(Path("validator-results", f"{Path(mzML_file).stem}_eic.pkl"))
                     eic_intys = eic[["area"]].rename(columns={"area": f"{Path(mzML_file).stem} EIC"})
                     eic_intys.index.name = "CompoundName"
@@ -77,42 +97,69 @@ if not df.empty:
     fig = px.bar(df, barmode="group")
     show_fig(fig, "summary-fig")
 
-
-dfs = [pd.read_pickle(f) for f in Path("validator-results").glob("*.pkl")]
-if dfs:
-    # Selectbox to choose a metabolite
-    options = []
-    for df in dfs:
-        options += df.index.tolist()
-    options = sorted(set(options))
-    selected_metabolite = st.selectbox('Select Metabolite', options)
-    filtered_dataframes = [df[df.index == selected_metabolite] for df in dfs]
+if any(Path("validator-results").glob("*_chrom.mzML")):
+    c1, c2 = st.columns(2)
+    file = c1.selectbox("show chromatograms for file", [f.stem[:-6] for f in Path("validator-results").glob("*_chrom.mzML")])
+    df = pd.read_pickle(Path("validator-results", file+"_chrom.pkl"))
+    metabolite = c2.selectbox("metabolite", sorted(df.index))
+    df = df[df.index == metabolite]
 
     fig = go.Figure()
-    for name, df in zip([f.stem[:-4] for f in Path("validator-results").glob("*.pkl")], filtered_dataframes):
-        fig.add_trace(
-            go.Scatter(
-                x=df["times"][0],
-                y=df["intensities"][0],
-                name=name,
-            )
+    fig.add_trace(
+        go.Scatter(
+            x=df["times"][0],
+            y=df["intensities"][0],
+            name="OpenSWATH",
         )
+    )
+
+    eic_path = Path("validator-results", file+"_eic.pkl")
+    if eic_path:
+        df = pd.read_pickle(eic_path)
+        df = df[df.index == metabolite]
+        if not df.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=df["times"][0],
+                    y=df["intensities"][0],
+                    name="EIC"
+                )
+            )
     fig.update_layout(
-        title=selected_metabolite,
+        title=file + ": " +metabolite,
         xaxis_title=f"time (min)",
         yaxis_title="intensity (counts per second)",
         legend_title="sample",
         plot_bgcolor="rgb(255,255,255)",
     )
     show_fig(fig, "eics")
-    # Create a list of DataFrames containing only the selected metabolite
-    # filtered_dataframes = [df[df.index == selected_metabolite] for df in dfs]
 
-    # print(filtered_dataframes)
-# single metabolite EIC plots
-# if not eic.empty:
-#     metabolite = st.selectbox("metabolite", eic["area"].sort_values(ascending=False).index)
-#     fig = px.line(x=eic.loc[metabolite, "times"], y=eic.loc[metabolite, "intensities"])
-#     fig.update_layout(showlegend=False, xaxis_title="retention time (s)", yaxis_title="counts per second (cps)", title=metabolite)
-#     show_fig(fig, metabolite)
 
+
+# dfs = [pd.read_pickle(f) for f in Path("validator-results").glob("*_eic.pkl")]
+# if dfs:
+#     # Selectbox to choose a metabolite
+#     options = []
+#     for df in dfs:
+#         options += df.index.tolist()
+#     options = sorted(set(options))
+#     selected_metabolite = st.selectbox('Select Metabolite', options)
+#     filtered_dataframes = [df[df.index == selected_metabolite] for df in dfs]
+
+#     fig = go.Figure()
+#     for name, df in zip([f.stem[:-4] for f in Path("validator-results").glob("*_eic.pkl")], filtered_dataframes):
+#         fig.add_trace(
+#             go.Scatter(
+#                 x=df["times"][0],
+#                 y=df["intensities"][0],
+#                 name=name,
+#             )
+#         )
+#     fig.update_layout(
+#         title=selected_metabolite,
+#         xaxis_title=f"time (min)",
+#         yaxis_title="intensity (counts per second)",
+#         legend_title="sample",
+#         plot_bgcolor="rgb(255,255,255)",
+#     )
+#     show_fig(fig, "eics")
