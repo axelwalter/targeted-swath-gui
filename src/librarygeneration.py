@@ -101,7 +101,7 @@ def generate_library(precursor_file, mzML_file, top_n, exclude_precursor_mass, t
     return df
 
 
-def generate_transitions_from_json_data(data, top_n, exclude_precursor_mass):
+def generate_transitions_from_json_data(data, top_n = 0, exclude_precursor_mass=True):
     """data is list of dicts with filtered entries from MassBank"""
     for m in data:
 
@@ -115,7 +115,10 @@ def generate_transitions_from_json_data(data, top_n, exclude_precursor_mass):
 
         # Sort the list of tuples based on the values in inty in descending order
         sorted_data = sorted(
-            combined_data, key=lambda x: x[1], reverse=True)[:top_n]
+            combined_data, key=lambda x: x[1], reverse=True)
+
+        if top_n:
+            sorted_data = sorted_data[:top_n]
 
         for mz, inty in sorted_data:
             yield (m["name"],
@@ -130,7 +133,7 @@ def generate_transitions_from_json_data(data, top_n, exclude_precursor_mass):
                    )
 
 
-def generate_library_from_json_data(data, top_n=4, exclude_precursor_mass=False):
+def generate_library_from_json_data(data, top_n, exclude_precursor_mass=False):
     df = pd.DataFrame(np.fromiter(generate_transitions_from_json_data(data, top_n, exclude_precursor_mass),
                                   dtype=[("CompoundName", "U100"),
                                          ("PrecursorMz", "f"),
@@ -147,3 +150,21 @@ def generate_library_from_json_data(data, top_n=4, exclude_precursor_mass=False)
     df["TransitionGroupId"] = [f"{n}_{i}" for i,
                                n in enumerate(df["CompoundName"])]
     return df.sort_values(by="CompoundName")
+
+
+def calculate_ppm_distance(value1, value2):
+    ppm = abs((value1 - value2) / value1) * 1e6
+    return ppm
+
+def filter_duplicate_transitions(df, threshold_ppm=50):
+    """Remove transitions where transition m/s's are not unique."""
+
+    indeces_to_drop = set()
+    for i in range(len(df)):
+        for j in range(i + 1, len(df)):
+            ppm_distance_ms1 = calculate_ppm_distance(df['PrecursorMz'][i], df['PrecursorMz'][j])
+            ppm_distance_ms2 = calculate_ppm_distance(df['ProductMz'][i], df['ProductMz'][j])
+            # Remove rows if ppm distance is within the threshold
+            if ppm_distance_ms1 < threshold_ppm and ppm_distance_ms2 < threshold_ppm:
+                indeces_to_drop.add(i)
+    return df.drop(list(indeces_to_drop))

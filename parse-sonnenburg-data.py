@@ -2,7 +2,7 @@ import json
 import pandas as pd
 import pyopenms as poms
 import numpy as np
-from src.librarygeneration import generate_library_from_json_data
+from src.librarygeneration import generate_library_from_json_data, filter_duplicate_transitions
 
 mgf_file = "resources/Supplementary_Table3.mgf"
 
@@ -124,6 +124,9 @@ for unique_metabolite in unique_metabolites:
 
 # generate library
 df = generate_library_from_json_data(data_merged, 5, True)
+
+# filter duplicates
+df = filter_duplicate_transitions(df, threshold_ppm=50)
 
 df.to_csv("assay-libraries/Sonnenburg-ESI-QTOF-M+H-SpectraMerger-WindowMower.tsv",
           sep="\t", index=False)
