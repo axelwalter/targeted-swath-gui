@@ -33,8 +33,23 @@ additional = st.text_area("additional commands", """-rt_extraction_window 60
 -mz_extraction_window 50
 """, height=200)
 
+
 _, c2, _ = st.columns(3)
 if c2.button("Run OpenSwathWorkflow", type="primary"):
+    try:
+        with open(swath_window, "r") as f:
+            content = f.readlines()
+            start_mz = int(content[1].split("\t")[0])
+            stop_mz = int(content[-1].split("\t")[1])
+    except:
+        st.error("Invalid SWATH window file.")
+
+    # filter assay library for precursor mzs
+    df = pd.read_csv(assay_library, sep="\t")
+    df = df[df["PrecursorMz"] > start_mz]
+    df = df[df["PrecursorMz"] < stop_mz]
+    assay_library = "assay-library-swath-window-filtered.tsv"
+    df.to_csv(assay_library, sep="\t", index=False)
     with st.status("Running...", expanded=True) as status:
         out_dir = Path("validator-results")
         if out_dir.exists():

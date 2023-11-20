@@ -4,3 +4,4 @@ validator-results/*
 MassBank/*
 resources/*
 assay-libraries/*
+assay-library-swath-window-filtered.tsv
