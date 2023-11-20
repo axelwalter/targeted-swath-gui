@@ -38,7 +38,7 @@ def get_extracted_ion_chromatogram(file, library, noise, rt_window, tolerance_pp
     for spec in exp:
         if spec.getMSLevel() == 1:
             times.append(spec.getRT())
-
+    
     lib["intensities"] = lib.apply(extract_intensities, axis=1)
     lib["times"] = [np.array(times) for _ in range(lib.shape[0])]
     lib["area"] = lib["intensities"].apply(lambda x: int(np.trapz(x)))

@@ -6,19 +6,32 @@ import pandas as pd
 import numpy as np
 import subprocess
 import shutil
-from src.openswathresults import plot_openswath_results
 from src.eic import get_extracted_ion_chromatogram
 from src.common import show_fig, show_table
 import pyopenms as poms
 
-st.set_page_config(layout="wide")
 
-mzML_files = st.multiselect("mzML files", [p.stem for p in Path("mzML-files").glob("*.mzML")])
+st.markdown("""
+    <style>
+        .stMultiSelect [data-baseweb=select] span{
+            max-width: 500px;
+            font-size: 1rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+# st.set_page_config(layout="wide")
+mix2_001 = [f"{conc}uM_Mix2_Bioblank_pos_001" for conc in ("01", "05", "1", "5", "25")]
+
+mzML_files = st.multiselect("mzML files", [p.stem for p in Path("mzML-files").glob("*.mzML")], mix2_001)
 assay_library = str(st.selectbox("assay library", Path("assay-libraries").glob("*.tsv"), 4))
 swath_window = str(st.selectbox("swath windows", Path("SWATH-windows").glob("*.tsv"), 2))
-create_eics = st.checkbox("additionally quantify with extracted ion chromatogram area", True)
-additional = st.text_input("additional commands", "-rt_extraction_window 10 -Scoring:TransitionGroupPicker:min_peak_width 2 -Scoring:TransitionGroupPicker:use_precursors -mz_extraction_window_ms1 10 -mz_extraction_window 10")
-
+additional = st.text_area("additional commands", """-rt_extraction_window 60
+-Scoring:TransitionGroupPicker:min_peak_width 2
+-Scoring:TransitionGroupPicker:use_precursors
+-mz_extraction_window_ms1 50
+-mz_extraction_window 50
+""", height=200)
 
 _, c2, _ = st.columns(3)
 if c2.button("Run OpenSwathWorkflow", type="primary"):
@@ -36,9 +49,8 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
                         "-out_tsv", str(Path(out_dir, Path(mzML_file).stem+".tsv")),
                         "-out_chrom", str(Path(out_dir, Path(mzML_file).stem+"_chrom.mzML")),
                         "-ms1_isotopes", "0",
-                        "-swath_windows_file", swath_window] + additional.split(" ") + ["-force"]
-            st.write("Executing OpenSwathWorkflow command:")
-            st.write(" ".join(command))
+                        "-Scoring:TransitionGroupPicker:compute_peak_shape_metrics",
+                        "-swath_windows_file", swath_window] + additional.strip().replace("\n", " ").split(" ") + ["-force"]
             subprocess.run(command)
 
             result_file_path = Path(out_dir, Path(mzML_file).stem+".tsv")
@@ -47,10 +59,12 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
                 continue
 
             df = pd.read_csv(result_file_path, sep="\t")
-            df["CompoundName"] = df.loc[:, "transition_group_id"].apply(lambda x: "_".join(x.split("_")[:-1]))
-            df = df.drop(columns=["transition_group_id"])
-            df = df.groupby("CompoundName")[["Intensity"]].mean().sort_values(by="Intensity")
-            df = df.rename(columns={"Intensity": Path(mzML_file).stem})
+            # df["CompoundName"] = df["peptide_group_label"] # df["transition_group_id"].apply(lambda x: x.split("_")[0])
+            # df = df.drop(columns=["transition_group_id"])
+            df = df.groupby("peptide_group_label")[["aggr_prec_Peak_Area"]].max() #.sort_values(by="aggr_prec_Peak_Area")
+            df["CompoundName"] = [x.split("_")[0] for x in df.index.tolist()]
+            df = df.groupby("CompoundName")[["aggr_prec_Peak_Area"]].mean()
+            df = df.rename(columns={"aggr_prec_Peak_Area": Path(mzML_file).stem})
             if not df.empty:
                 dfs.append(df)
                 names = []
@@ -60,22 +74,25 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
                 poms.MzMLFile().load(str(Path("validator-results", Path(mzML_file).stem +  "_chrom.mzML")), exp)
                 for chrom in exp.getChromatograms():
                     if chrom.getChromatogramType() == 3: # 3 == BASEPEAK_CHROMATOGRAM, 5 = SELECTED_REACTION_MONITORING_CHROMATOGRAM
-                        names.append(chrom.getPrecursor().getMetaValue("peptide_sequence")) 
-                        rt, inty = chrom.get_peaks()
-                        rts.append(rt)
-                        intys.append(inty)
+                        name = chrom.getPrecursor().getMetaValue("peptide_sequence")
+                        if name not in names:
+                            names.append(name) 
+                            rt, inty = chrom.get_peaks()
+                            rts.append(rt)
+                            intys.append(inty)
                 chroms = pd.DataFrame({"name": names, "times": rts, "intensities": intys})
                 chroms = chroms.set_index("name")
                 chroms = chroms[chroms.index.isin(df.index)]
+
                 chroms.to_pickle(Path("validator-results", f"{Path(mzML_file).stem}_chrom.pkl"))
                 
-                if create_eics:
-                    eic = get_extracted_ion_chromatogram(mzML_file, assay_library, 100, 10, 10, df.index.tolist())
-                    eic.to_pickle(Path("validator-results", f"{Path(mzML_file).stem}_eic.pkl"))
-                    eic_intys = eic[["area"]].rename(columns={"area": f"{Path(mzML_file).stem} EIC"})
-                    eic_intys.index.name = "CompoundName"
-                    dfs.append(eic_intys)
-                    st.write("✅ Done exracting chromatograms.")
+                eic = get_extracted_ion_chromatogram(mzML_file, assay_library, 100, 60, 25)
+                eic.to_pickle(Path("validator-results", f"{Path(mzML_file).stem}_eic.pkl"))
+                eic_intys = eic[["area"]].rename(columns={"area": f"{Path(mzML_file).stem} EIC"})
+                eic_intys.index.name = "CompoundName"
+                dfs.append(eic_intys)
+            else:
+                st.warning(f"No results for file {mzML_file}")
 
         if dfs:
             df = pd.concat(dfs, axis=1)
@@ -94,37 +111,52 @@ else:
     df = pd.DataFrame()
 
 if not df.empty:
+    df = df.fillna(0)
+    show_eic_auc = st.checkbox("show EIC intensities", True)
+    if not show_eic_auc:
+        df = df[[col for col in df if "EIC" not in col]]
+    # Remove rows where all values are 0 or None
+    # df = df.dropna(how="all")
+    df = df[(df != 0).any(axis=1)]
     fig = px.bar(df, barmode="group")
     show_fig(fig, "summary-fig")
 
-if any(Path("validator-results").glob("*_chrom.mzML")):
+if any(Path("validator-results").glob("*_chrom.pkl")):
     c1, c2 = st.columns(2)
     file = c1.selectbox("show chromatograms for file", [f.stem[:-6] for f in Path("validator-results").glob("*_chrom.mzML")])
-    df = pd.read_pickle(Path("validator-results", file+"_chrom.pkl"))
-    metabolite = c2.selectbox("metabolite", sorted(df.index))
-    df = df[df.index == metabolite]
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=df["times"][0],
-            y=df["intensities"][0],
-            name="OpenSWATH",
-        )
-    )
-
+    df_openswath = pd.read_pickle(Path("validator-results", file+"_chrom.pkl"))
+    metabolite_options = df_openswath.index
     eic_path = Path("validator-results", file+"_eic.pkl")
-    if eic_path:
-        df = pd.read_pickle(eic_path)
-        df = df[df.index == metabolite]
-        if not df.empty:
-            fig.add_trace(
-                go.Scatter(
-                    x=df["times"][0],
-                    y=df["intensities"][0],
-                    name="EIC"
-                )
+    if eic_path.exists():
+        df_eic = pd.read_pickle(eic_path)
+        metabolite_options = df_eic.index
+    metabolite = c2.selectbox("metabolite", sorted(metabolite_options))
+
+    # Add OpenSWATH chromatogram
+    df = df_openswath[df_openswath.index == metabolite]
+    fig = go.Figure()
+    if not df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df["times"][0],
+                y=df["intensities"][0],
+                name="OpenSWATH",
+                line={"color": "#636efa", "width": 4}
             )
+        )
+    else:
+        st.warning(f"No OpenSWATH result for {metabolite}")
+    # Add EIC chromatogram
+    df = df_eic[df_eic.index == metabolite]
+    if not df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df["times"][0],
+                y=df["intensities"][0],
+                name="EIC",
+                line={"color": "#ef553b"}
+            )
+        )
     fig.update_layout(
         title=file + ": " +metabolite,
         xaxis_title=f"time (min)",
