@@ -7,6 +7,8 @@ from pyopenms import *
 def get_extracted_ion_chromatogram(file, library, noise, rt_window, tolerance_ppm, openswath_metabolites=[]):
     # load compound names, mz and RT values from library
     lib = pd.read_csv(library, sep="\t").groupby("CompoundName").mean("PrecursorMz")[["PrecursorMz", "NormalizedRetentionTime"]]
+    lib.index = pd.Index([x.replace(",", "") for x in lib.index])
+
     if openswath_metabolites:
         lib = lib[lib.index.isin(openswath_metabolites)]
     # load mzML file into exp

@@ -57,7 +57,6 @@ if c2.button("Run OpenSwathWorkflow", type="primary"):
             if not result_file_path.exists():
                 st.warning(f"Results empty for {mzML_file}")
                 continue
-
             df = pd.read_csv(result_file_path, sep="\t")
             # df["CompoundName"] = df["peptide_group_label"] # df["transition_group_id"].apply(lambda x: x.split("_")[0])
             # df = df.drop(columns=["transition_group_id"])
