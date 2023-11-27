@@ -126,6 +126,8 @@ else:
 
 if not df.empty:
     df = df.fillna(0)
+    with st.expander("📁 Data"):
+        st.dataframe(df)
     show_eic_auc = st.checkbox("show EIC intensities", True)
     if not show_eic_auc:
         df = df[[col for col in df if "EIC" not in col]]
